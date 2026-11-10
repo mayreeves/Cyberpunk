@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Desafio 3D Procedural - 64KB</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #000;
+      font-family: sans-serif;
+    }
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #00ffcc;
+      font-size: 14px;
+      pointer-events: none;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 10px;
+      border-radius: 5px;
+    }
+  </style>
+
+  <!-- Biblioteca Three.js carregada via CDN (Sem assets locais) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+  <div id="info">
+    🎮 Scene: Terreno Procedural Cyberpunk<br>
+    ⚡ Teclas/Mouse: Arraste para girar a câmera
+  </div>
+
+  <script>
+    // --- 1. CONFIGURAÇÃO DA CENA, CÂMERA E RENDERIZADOR ---
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x050515, 0.035); // Névoa para efeito de profundidade
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 5, 15);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limita para garantir 60 FPS
+    document.body.appendChild(renderer.domElement);
+
+    // --- 2. TEXTURA PROCEDURAL VIA CANVAS (ZERO ASSETS EXTERNOS) ---
+    function createGridTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+
+      // Fundo escuro
+      ctx.fillStyle = '#0a0a1a';
+      ctx.fillRect(0, 0, 256, 256);
+
+      // Grade Neon
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(0, 0, 256, 256);
+
+      ctx.strokeStyle = '#ff007f';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 128); ctx.lineTo(256, 128);
+      ctx.moveTo(128, 0); ctx.lineTo(128, 256);
+      ctx.stroke();
+
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    const gridTexture = createGridTexture();
+    gridTexture.wrapS = THREE.RepeatWrapping;
+    gridTexture.wrapT = THREE.RepeatWrapping;
+    gridTexture.repeat.set(20, 20);
+
+    // --- 3. GEOMETRIA PROCEDURAL (TERRENO VIA MATEMÁTICA) ---
+    const planeGeo = new THREE.PlaneGeometry(60, 60, 80, 80);
+    const pos = planeGeo.attributes.position;
+
+    // Modificando os vértices usando senos e cossenos
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      // Fórmula matemática para elevação do terreno:
+      const z = Math.sin(x * 0.3) * Math.cos(y * 0.3) * 2 + Math.sin(x * 0.1) * 1.5;
+      pos.setZ(i, z);
+    }
+    planeGeo.computeVertexNormals();
+
+    const planeMat = new THREE.MeshStandardMaterial({
+      map: gridTexture,
+      roughness: 0.2,
+      metalness: 0.8,
+      wireframe: false
+    });
+
+    const terrain = new THREE.Mesh(planeGeo, planeMat);
+    terrain.rotation.x = -Math.PI / 2;
+    scene.add(terrain);
+
+    // --- 4. OBJETO CENTRAL E PARTÍCULAS ---
+    // Núcleo flutuante (Icosaedro)
+    const coreGeo = new THREE.IcosahedronGeometry(2, 1);
+    const coreMat = new THREE.MeshStandardMaterial({
+      color: 0xff007f,
+      wireframe: true,
+      emissive: 0x550022
+    });
+    const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+    coreMesh.position.set(0, 4, 0);
+    scene.add(coreMesh);
+
+    // Partículas levas no ar (Partículas Procedurais)
+    const particlesGeo = new THREE.BufferGeometry();
+    const count = 300;
+    const positions = new Float32Array(count * 3);
+
+    for (let i = 0; i < count * 3; i += 3) {
+      positions[i] = (Math.random() - 0.5) * 40;
+      positions[i + 1] = Math.random() * 10;
+      positions[i + 2] = (Math.random() - 0.5) * 40;
+    }
+
+    particlesGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const particlesMat = new THREE.PointsMaterial({
+      color: 0x00ffcc,
+      size: 0.15,
+      transparent: true,
+      opacity: 0.8
+    });
+    const particleSystem = new THREE.Points(particlesGeo, particlesMat);
+    scene.add(particleSystem);
+
+    // --- 5. ILUMINAÇÃO DINÂMICA ---
+    const ambientLight = new THREE.AmbientLight(0x111122);
+    scene.add(ambientLight);
+
+    const light1 = new THREE.PointLight(0x00ffcc, 3, 30);
+    scene.add(light1);
+
+    const light2 = new THREE.PointLight(0xff007f, 3, 30);
+    scene.add(light2);
+
+    // --- 6. CONTROLE SIMPLES DE CÂMERA (MOUSE) ---
+    let mouseX = 0, mouseY = 0;
+    document.addEventListener('mousemove', (e) => {
+      mouseX = (e.clientX - window.innerWidth / 2) * 0.001;
+      mouseY = (e.clientY - window.innerHeight / 2) * 0.001;
+    });
+
+    // --- 7. LOOP DE ANIMAÇÃO (60 FPS) ---
+    let clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const time = clock.getElapsedTime();
+
+      // Rotação do objeto central e levitação
+      coreMesh.rotation.x = time * 0.5;
+      coreMesh.rotation.y = time * 0.8;
+      coreMesh.position.y = 4 + Math.sin(time * 2) * 0.5;
+
+      // Órbita das luzes pontuais
+      light1.position.x = Math.sin(time * 1.5) * 8;
+      light1.position.z = Math.cos(time * 1.5) * 8;
+      light1.position.y = 3;
+
+      light2.position.x = Math.cos(time * 1.2) * -8;
+      light2.position.z = Math.sin(time * 1.2) * -8;
+      light2.position.y = 3;
+
+      // Movimento suave da câmera com o mouse
+      camera.position.x += (Math.sin(mouseX * 5) * 12 - camera.position.x) * 0.05;
+      camera.position.y += (5 + mouseY * 10 - camera.position.y) * 0.05;
+      camera.lookAt(0, 2, 0);
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Redimensionamento da janela
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
